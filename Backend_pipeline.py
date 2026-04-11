@@ -45,8 +45,10 @@ HEADERS = {
 def fetch_html(url):
     try:
         response = requests.get(url, headers=HEADERS, timeout=10)
+        response.raise_for_status()
         return response.text
-    except:
+    except Exception as e:
+        print(f"Error fetching {url}: {e}")
         return None
 
 
@@ -81,11 +83,11 @@ def find_relevant_links(base_url, html):
 
 
 def extract_company_data(url):
-    data = {}
+    data = {"home": "", "about": "", "blog": ""}
 
     home_html = fetch_html(url)
     if not home_html:
-        return None
+        return data
 
     data["home"] = clean_text(home_html)
 
@@ -102,7 +104,6 @@ def extract_company_data(url):
             data["blog"] = clean_text(blog_html)
 
     return data
-
 
 # -----------------------------
 # AI FUNCTIONS

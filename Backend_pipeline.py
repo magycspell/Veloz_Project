@@ -124,7 +124,7 @@ def extract_company_data(url):
 # AI FUNCTIONS
 # -----------------------------
 def find_people_with_ai(data, roles):
-    text = (data.get("home", "") + "\n\n" + data.get("about", ""))[:4000]
+    text = (data.get("home", "") + "\n\n" + data.get("about", ""))[:2000]
 
     roles_text = ", ".join(roles)
 
@@ -182,7 +182,7 @@ Keep it under 120 words. No bullet points.
 """
 
     res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
+        model="llama-3.1-8b-instant",
         messages=[{"role": "user", "content": prompt}]
     )
 

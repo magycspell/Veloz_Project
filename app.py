@@ -6,66 +6,79 @@ st.set_page_config(page_title="Veloz AI", layout="wide")
 st.title("🚀 Prospect Intelligence Engine")
 st.markdown("Turn any company into a qualified lead instantly.")
 
+@st.cache_data
+def run_analysis(url):
+    data = extract_company_data(url)
+
+    if data is None:
+        data = {"home": "", "about": "", "blog": ""}
+
+    profile = generate_company_profile(data)
+    audit = generate_content_audit(data)
+
+    company = extract_company_name(profile)
+    competitors = get_competitors(profile)
+    responses = generate_ai_responses(company, competitors)
+    visibility = analyze_visibility(company, competitors, responses)
+
+    scores = generate_scores(profile, audit, visibility)
+
+    size = estimate_company_size(profile)
+    roles = get_target_role_dynamic(size)
+
+    name, role = find_people_with_ai(data, roles)
+    if not name:
+        name, role = fallback_contact(roles)
+
+    email = generate_outreach_email(company, name, role, audit, visibility)
+
+    return {
+        "profile": profile,
+        "audit": audit,
+        "company": company,
+        "competitors": competitors,
+        "visibility": visibility,
+        "scores": scores,
+        "size": size,
+        "name": name,
+        "role": role,
+        "email": email,
+    }
+
 url = st.text_input("Enter company URL")
 
 if st.button("Run Analysis"):
-    with st.spinner("Running AI analysis..."):
-        data = extract_company_data(url)
+    if not url:
+        st.warning("Please enter a company URL first.")
+    else:
+        with st.spinner("Running AI analysis..."):
+            result = run_analysis(url)
 
-        if data is None:
-            data = {
-                "home": "",
-                "about": "",
-                "blog": ""
-            }
+            col1, col2 = st.columns(2)
 
-        profile = generate_company_profile(data)
-        audit = generate_content_audit(data)
+            with col1:
+                st.subheader("🏢 Company Profile")
+                st.write(result["profile"])
 
-        company = extract_company_name(profile)
+                st.subheader("📊 Scores")
+                st.write(result["scores"])
 
-        competitors = get_competitors(profile)
-        responses = generate_ai_responses(company, competitors)
-        visibility = analyze_visibility(company, competitors, responses)
+            with col2:
+                st.subheader("🧠 Content Audit")
+                st.write(result["audit"])
 
-        scores = generate_scores(profile, audit, visibility)
+                st.subheader("👀 AI Visibility")
+                st.write(result["visibility"])
 
-        size = estimate_company_size(profile)
-        roles = get_target_role_dynamic(size)
+            st.subheader("🏁 Competitors")
+            st.write(result["competitors"])
 
-        candidates = find_people(data, roles)
-        name, role = find_people_with_ai(data, roles)
+            st.subheader("🎯 Target Contact")
+            st.write(f"Name: {result['name']}")
+            st.write(f"Role: {result['role']}")
+            st.write(f"Company Size: {result['size']}")
 
-        if not name:
-            name, role = fallback_contact(roles)
+            st.subheader("📧 Outreach Email")
+            st.text_area("Copy & send", result["email"], height=200)
 
-        email = generate_outreach_email(company, name, role, audit, visibility)
-
-        col1, col2 = st.columns(2)
-
-        with col1:
-            st.subheader("🏢 Company Profile")
-            st.write(profile)
-
-            st.subheader("📊 Scores")
-            st.write(scores)
-
-        with col2:
-            st.subheader("🧠 Content Audit")
-            st.write(audit)
-
-            st.subheader("👀 AI Visibility")
-            st.write(visibility)
-
-        st.subheader("🏁 Competitors")
-        st.write(competitors)
-
-        st.subheader("🎯 Target Contact")
-        st.write(f"Name: {name}")
-        st.write(f"Role: {role}")
-        st.write(f"Company Size: {size}")
-
-        st.subheader("📧 Outreach Email")
-        st.text_area("Copy & send", email, height=200)
-
-        st.success("Analysis complete ✅")
+            st.success("Analysis complete ✅")

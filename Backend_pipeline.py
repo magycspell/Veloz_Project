@@ -83,25 +83,40 @@ def find_relevant_links(base_url, html):
 
 
 def extract_company_data(url):
-    data = {"home": "", "about": "", "blog": ""}
+    data = {}
 
-    home_html = fetch_html(url)
-    if not home_html:
-        return data
+    html = fetch_html(url)
 
-    data["home"] = clean_text(home_html)
+    if not html:
+        return {
+            "home": "",
+            "about": "",
+            "blog": ""
+        }
 
-    about_url, blog_url = find_relevant_links(url, home_html)
+    data["home"] = clean_text(html)
 
-    if about_url:
-        about_html = fetch_html(about_url)
-        if about_html:
-            data["about"] = clean_text(about_html)
+    about, blog = find_relevant_links(url, html)
 
-    if blog_url:
-        blog_html = fetch_html(blog_url)
-        if blog_html:
-            data["blog"] = clean_text(blog_html)
+    if about:
+        a_html = fetch_html(about)
+        if a_html:
+            data["about"] = clean_text(a_html)
+        else:
+            data["about"] = ""
+
+    else:
+        data["about"] = ""
+
+    if blog:
+        b_html = fetch_html(blog)
+        if b_html:
+            data["blog"] = clean_text(b_html)
+        else:
+            data["blog"] = ""
+
+    else:
+        data["blog"] = ""
 
     return data
 

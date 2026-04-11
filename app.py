@@ -10,14 +10,19 @@ url = st.text_input("Enter company URL")
 
 if st.button("Run Analysis"):
     with st.spinner("Running AI analysis..."):
-
         data = extract_company_data(url)
+
+        if data is None:
+            data = {
+                "home": "",
+                "about": "",
+                "blog": ""
+            }
 
         profile = generate_company_profile(data)
         audit = generate_content_audit(data)
 
         company = extract_company_name(profile)
-        
 
         competitors = get_competitors(profile)
         responses = generate_ai_responses(company, competitors)
@@ -25,22 +30,17 @@ if st.button("Run Analysis"):
 
         scores = generate_scores(profile, audit, visibility)
 
-        # ---------------- CONTACT DETECTION (AGREGADO) ----------------
         size = estimate_company_size(profile)
         roles = get_target_role_dynamic(size)
 
         candidates = find_people(data, roles)
         name, role = find_people_with_ai(data, roles)
-        
 
         if not name:
             name, role = fallback_contact(roles)
-        # -------------------------------------------------------------
 
-        # ⚠️ reemplazamos esta línea para usar name y role
         email = generate_outreach_email(company, name, role, audit, visibility)
 
-        # ---------------- UI ----------------
         col1, col2 = st.columns(2)
 
         with col1:
@@ -60,7 +60,6 @@ if st.button("Run Analysis"):
         st.subheader("🏁 Competitors")
         st.write(competitors)
 
-        # 🆕 opcional pero MUY útil para demo
         st.subheader("🎯 Target Contact")
         st.write(f"Name: {name}")
         st.write(f"Role: {role}")

@@ -430,26 +430,31 @@ if __name__ == "__main__":
 
     audit = generate_content_audit(data)
     print("\n=== CONTENT AUDIT ===\n", audit)
+
     company = extract_company_name(profile)
 
-company_type = classify_company_type(profile)
-if "saas" in company_type:
-    competitors = get_competitors(profile)
-    responses = generate_ai_responses(company, competitors)
-    visibility = analyze_visibility(company, competitors, responses)
+    # 🔥 IMPORTANTE: esto va DENTRO
+    company_type = classify_company_type(profile)
 
-else:
-    # enfocamos en producto SaaS dentro de empresa grande
-    focus = refine_scope_for_large_company(company)
+    if "saas" in company_type:
+        competitors = get_competitors(profile)
+        responses = generate_ai_responses(company, competitors)
+        visibility = analyze_visibility(company, competitors, responses)
+    else:
+        # enfocamos en producto SaaS dentro de empresa grande
+        focus = refine_scope_for_large_company(company)
 
-    competitors = get_competitors(profile + f"\nFocus on: {focus}")
-    responses = generate_ai_responses(focus, competitors)
-    visibility = analyze_visibility(focus, competitors, responses)
+        competitors = get_competitors(profile + f"\nFocus on: {focus}")
+        responses = generate_ai_responses(focus, competitors)
+        visibility = analyze_visibility(focus, competitors, responses)
 
     print("\n=== AI VISIBILITY ===\n", visibility)
+
     size = estimate_company_size(profile)
     roles = get_target_role_dynamic(size)
+
     name, role = find_person_via_ai_search(f"{company} ({url})", roles)
+
     email = generate_outreach_email(
         company,
         name,

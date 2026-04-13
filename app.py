@@ -26,7 +26,7 @@ def run_analysis(url):
     size = estimate_company_size(profile)
     roles = get_target_role_dynamic(size)
 
-    name, role = find_people_with_ai(data, roles)
+    name, role = find_person_via_ai_search(f"{company} ({url})", roles)
     if not name:
         name, role = fallback_contact(roles)
 

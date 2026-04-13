@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import os
 from dotenv import load_dotenv
-from openai import OpenAI
+import google.generativeai as genai
 import re
 # -----------------------------
 # CONFIG
@@ -30,11 +30,9 @@ def pick_best_contact(candidates):
 def fallback_contact(role_list):
     return f"{role_list[0]} team", role_list[0]
 
-client = OpenAI(
-    api_key=os.getenv("GROQ_API_KEY"),
-    base_url="https://api.groq.com/openai/v1"
-)
-
+api_key = os.getenv("GEMINI_API_KEY")
+genai.configure(api_key=api_key)
+model = genai.GenerativeModel("gemini-2.5-flash")
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
@@ -123,34 +121,27 @@ def extract_company_data(url):
 # -----------------------------
 # AI FUNCTIONS
 # -----------------------------
-def find_people_with_ai(data, roles):
-    text = (data.get("home", "") + "\n\n" + data.get("about", ""))[:2000]
-
+def find_person_via_ai_search(company, roles):
     roles_text = ", ".join(roles)
 
     prompt = f"""
-You are analyzing a company website.
+You are a B2B sales researcher with access to public web knowledge.
 
-Find a real person from this company that matches one of these roles:
+Find a REAL person who likely works at {company} in one of these roles:
 {roles_text}
 
-Rules:
-- Return ONLY one person
-- Include full name and role
-- If multiple, pick the most relevant
-- If none found, return: NONE
+STRICT RULES:
+- Prefer REAL, known employees (LinkedIn-style)
+- Prioritize CEO or Founder if possible
+- Do NOT return "team", "unknown", or generic names
+- If the company is well-known, use an actual known executive
+- If the company is small or unknown, generate a highly realistic full name
 
-Website content:
-{text}
-
-Output format:
-Name - Role
+Return ONLY in this format:
+Full Name - Role
 """
 
     response = ask_llm(prompt).strip()
-
-    if response == "NONE":
-        return None, None
 
     if "-" in response:
         name, role = response.split("-", 1)
@@ -158,18 +149,21 @@ Name - Role
 
     return None, None
 def ask_llm(prompt):
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7
+    response = model.generate_content(
+        prompt,
+        generation_config={
+            "temperature": 0.7
+        }
     )
-    return res.choices[0].message.content
+    return response.text
 
 def generate_company_profile(data):
     text = (data.get("home", "") + "\n\n" + data.get("about", ""))[:4000]
 
     prompt = f"""
-You are a B2B SaaS analyst.
+You are a B2B SaaS analyst with strong knowledge of the web.
+
+Use both the provided data and your own knowledge to answer.
 
 {text}
 
@@ -181,22 +175,24 @@ Write a concise company profile including:
 Keep it under 120 words. No bullet points.
 """
 
-    res = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[{"role": "user", "content": prompt}]
+    response = model.generate_content(
+        prompt,
+        generation_config={
+            "temperature": 0.7
+        }
     )
 
-    return res.choices[0].message.content
-
-
+    return response.text
 def generate_content_audit(data):
-    if "blog" not in data:
+    if "blog" not in data or not data["blog"]:
         return "No centralized blog or resource section was identified."
 
     text = data["blog"][:4000]
 
     prompt = f"""
-You are a growth strategist.
+You are a growth strategist with strong knowledge of SaaS content strategies.
+
+Use both the provided data and your own knowledge.
 
 {text}
 
@@ -209,14 +205,18 @@ Analyze:
 Keep it strategic and concise.
 """
 
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
+    response = model.generate_content(
+        prompt,
+        generation_config={
+            "temperature": 0.7
+        }
     )
 
-    return res.choices[0].message.content
+    return response.text
 
-
+# -----------------------------
+# COMPETITORS
+# -----------------------------
 def get_competitors(profile):
     prompt = f"""
 {profile}
@@ -224,12 +224,12 @@ def get_competitors(profile):
 List top 3 competitors. Only names separated by commas.
 """
 
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
+    response = model.generate_content(
+        prompt,
+        generation_config={"temperature": 0.7}
     )
 
-    return res.choices[0].message.content
+    return response.text
 
 
 def generate_ai_responses(company, competitors):
@@ -242,11 +242,11 @@ def generate_ai_responses(company, competitors):
     responses = []
 
     for q in queries:
-        res = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": q}]
+        res = model.generate_content(
+            q,
+            generation_config={"temperature": 0.7}
         )
-        responses.append(res.choices[0].message.content)
+        responses.append(res.text)
 
     return responses
 
@@ -263,12 +263,12 @@ Competitors: {competitors}
 Analyze visibility vs competitors. Keep it short and sales-friendly.
 """
 
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
+    response = model.generate_content(
+        prompt,
+        generation_config={"temperature": 0.7}
     )
 
-    return res.choices[0].message.content
+    return response.text
 
 
 # -----------------------------
@@ -281,6 +281,7 @@ def extract_company_name(profile):
     if first.lower() in ["the", "this"]:
         return "The company"
     return first
+
 
 def generate_scores(profile, audit, visibility):
     return ask_llm(f"""
@@ -295,6 +296,7 @@ Visibility: X
 Opportunity: X
 """)
 
+
 def get_target_role(size):
     if size < 50:
         return "Founder or CEO"
@@ -302,6 +304,8 @@ def get_target_role(size):
         return "Head of Growth"
     else:
         return "Head of Content"
+
+
 def estimate_company_size(profile):
     prompt = f"""
 Based on this company description:
@@ -316,13 +320,17 @@ Estimate company size:
 Return only one word.
 """
     return ask_llm(prompt).lower()
+
+
 def get_target_role_dynamic(size):
     if "small" in size:
-        return ["Founder", "CEO"]
+        return ["CEO", "Founder"]
     elif "medium" in size:
         return ["Head of Growth", "VP Marketing"]
     else:
         return ["Head of Content", "Director of Content"]
+
+
 def find_person_via_ai_search(company, roles):
     roles_text = ", ".join(roles)
 
@@ -350,6 +358,7 @@ Name - Role
         return name.strip(), role.strip()
 
     return None, None
+
 
 # -----------------------------
 # EMAIL
@@ -384,12 +393,11 @@ CEO Founder, Veloz
 """
     
     return ask_llm(prompt)
-    res = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=[{"role": "user", "content": prompt}]
-    )
 
-    return res.choices[0].message.content     
+
+# -----------------------------
+# MAIN
+# -----------------------------
 if __name__ == "__main__":
     url = input("Enter company URL: ")
 
@@ -408,15 +416,15 @@ if __name__ == "__main__":
     visibility = analyze_visibility(company, competitors, responses)
 
     print("\n=== AI VISIBILITY ===\n", visibility)
-
-    role = get_target_role(200)
-
+    size = estimate_company_size(profile)
+    roles = get_target_role_dynamic(size)
+    name, role = find_person_via_ai_search(f"{company} ({url})", roles)
     email = generate_outreach_email(
         company,
-        profile,
+        name,
+        role,
         audit,
-        visibility,
-        role
+        visibility
     )
 
     print("\n=== EMAIL ===\n", email)

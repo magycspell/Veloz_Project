@@ -430,11 +430,9 @@ if __name__ == "__main__":
 
     audit = generate_content_audit(data)
     print("\n=== CONTENT AUDIT ===\n", audit)
-
     company = extract_company_name(profile)
 
-    company_type = classify_company_type(profile)
-
+company_type = classify_company_type(profile)
 if "saas" in company_type:
     competitors = get_competitors(profile)
     responses = generate_ai_responses(company, competitors)

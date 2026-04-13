@@ -161,7 +161,7 @@ def generate_company_profile(data):
     text = (data.get("home", "") + "\n\n" + data.get("about", ""))[:4000]
 
     prompt = f"""
-You are a B2B SaaS analyst with strong knowledge of the web.
+You are a B2B SaaS analyst with strong knowledge of the web. If the company is not a pure SaaS company, focus on its most relevant SaaS-like product or business unit.
 
 Use both the provided data and your own knowledge to answer.
 
@@ -190,7 +190,7 @@ def generate_content_audit(data):
     text = data["blog"][:4000]
 
     prompt = f"""
-You are a growth strategist with strong knowledge of SaaS content strategies.
+You are a growth strategist with strong knowledge of SaaS content strategies. If the company is not a pure SaaS company, focus on its most relevant SaaS-like product or business unit.
 
 Use both the provided data and your own knowledge.
 
@@ -260,7 +260,7 @@ Competitors: {competitors}
 
 {text}
 
-Analyze visibility vs competitors. Keep it short and sales-friendly.
+Analyze visibility vs competitors. Keep it short and sales-friendly. If the company is not a pure SaaS company, focus on its most relevant SaaS-like product or business unit.
 """
 
     response = model.generate_content(
@@ -281,6 +281,28 @@ def extract_company_name(profile):
     if first.lower() in ["the", "this"]:
         return "The company"
     return first
+def classify_company_type(profile):
+    prompt = f"""
+Based on this company description:
+
+{profile}
+
+Is this company primarily a B2B SaaS company?
+
+Answer ONLY:
+- saas
+- not_saas
+"""
+    return ask_llm(prompt).strip().lower()
+def refine_scope_for_large_company(company):
+    prompt = f"""
+{company} is a large company.
+
+Identify its most relevant SaaS product or platform.
+
+Return only the product name.
+"""
+    return ask_llm(prompt)
 
 
 def generate_scores(profile, audit, visibility):
@@ -411,9 +433,20 @@ if __name__ == "__main__":
 
     company = extract_company_name(profile)
 
+    company_type = classify_company_type(profile)
+
+if "saas" in company_type:
     competitors = get_competitors(profile)
     responses = generate_ai_responses(company, competitors)
     visibility = analyze_visibility(company, competitors, responses)
+
+else:
+    # enfocamos en producto SaaS dentro de empresa grande
+    focus = refine_scope_for_large_company(company)
+
+    competitors = get_competitors(profile + f"\nFocus on: {focus}")
+    responses = generate_ai_responses(focus, competitors)
+    visibility = analyze_visibility(focus, competitors, responses)
 
     print("\n=== AI VISIBILITY ===\n", visibility)
     size = estimate_company_size(profile)

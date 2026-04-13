@@ -158,8 +158,14 @@ def ask_llm(prompt):
     return response.text
 
 def generate_company_profile(data):
-    text = (data.get("home", "") + "\n\n" + data.get("about", ""))[:4000]
+    raw_text = (data.get("home", "") + "\n\n" + data.get("about", "")).strip()
 
+    company = extract_company_name(raw_text or "the company")
+
+    if not raw_text or len(raw_text) < 100:
+        text = f"No website data available. Use your knowledge about {company}."
+    else:
+        text = raw_text[:4000]
     prompt = f"""
 You are a B2B SaaS analyst with strong knowledge of the web. If the company is not a pure SaaS company, focus on its most relevant SaaS-like product or business unit.
 

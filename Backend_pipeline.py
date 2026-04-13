@@ -5,9 +5,19 @@ import os
 from dotenv import load_dotenv
 import google.generativeai as genai
 import re
+from urllib.parse import urlparse
 # -----------------------------
 # CONFIG
 # -----------------------------
+def extract_company_from_url(url):
+    try:
+        domain = urlparse(url).netloc
+        domain = domain.replace("www.", "")
+        name = domain.split(".")[0]
+        return name.capitalize()
+    except:
+        return "The company"
+    
 load_dotenv()
 def find_people(data, roles):
     text = data.get("about", "") + " " + data.get("home", "")
@@ -33,6 +43,10 @@ def fallback_contact(role_list):
 api_key = os.getenv("GEMINI_API_KEY")
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel("gemini-2.5-flash")
+LARGE_COMPANY_PATHS = {
+    "blog": ["/blog", "/news", "/newsroom", "/insights", "/resources", "/stories"],
+    "about": ["/about", "/about-us", "/company", "/who-we-are", "/our-story"],
+}
 HEADERS = {
     "User-Agent": "Mozilla/5.0"
 }
@@ -63,22 +77,26 @@ def clean_text(html):
 def find_relevant_links(base_url, html):
     soup = BeautifulSoup(html, "html.parser")
     links = soup.find_all("a", href=True)
-
     about_url = None
     blog_url = None
 
     for link in links:
         href = link["href"].lower()
+        full = urljoin(base_url, href)
 
-        if "about" in href and not about_url:
-            about_url = urljoin(base_url, href)
+        if not about_url:
+            for path in LARGE_COMPANY_PATHS["about"]:
+                if path in href:
+                    about_url = full
+                    break
 
-        if any(x in href for x in ["blog", "resources", "insights"]):
-            if not blog_url:
-                blog_url = urljoin(base_url, href)
+        if not blog_url:
+            for path in LARGE_COMPANY_PATHS["blog"]:
+                if path in href:
+                    blog_url = full
+                    break
 
     return about_url, blog_url
-
 
 def extract_company_data(url):
     data = {}
@@ -121,33 +139,7 @@ def extract_company_data(url):
 # -----------------------------
 # AI FUNCTIONS
 # -----------------------------
-def find_person_via_ai_search(company, roles):
-    roles_text = ", ".join(roles)
 
-    prompt = f"""
-You are a B2B sales researcher with access to public web knowledge.
-
-Find a REAL person who likely works at {company} in one of these roles:
-{roles_text}
-
-STRICT RULES:
-- Prefer REAL, known employees (LinkedIn-style)
-- Prioritize CEO or Founder if possible
-- Do NOT return "team", "unknown", or generic names
-- If the company is well-known, use an actual known executive
-- If the company is small or unknown, generate a highly realistic full name
-
-Return ONLY in this format:
-Full Name - Role
-"""
-
-    response = ask_llm(prompt).strip()
-
-    if "-" in response:
-        name, role = response.split("-", 1)
-        return name.strip(), role.strip()
-
-    return None, None
 def ask_llm(prompt):
     response = model.generate_content(
         prompt,
@@ -156,23 +148,34 @@ def ask_llm(prompt):
         }
     )
     return response.text
+def detect_company_type(url, profile):
+    prompt = f"""
+Based on this company URL ({url}) and profile:
+{profile[:1000]}
 
+Classify the company type. Return ONLY one of:
+saas / enterprise / agency / ecommerce / other
+"""
+    return ask_llm(prompt).strip().lower()
+
+  # this line was already there
 def generate_company_profile(data):
     raw_text = (data.get("home", "") + "\n\n" + data.get("about", "")).strip()
 
-    company = extract_company_name(raw_text or "the company")
-
     if not raw_text or len(raw_text) < 100:
-        text = f"No website data available. Use your knowledge about {company}."
+        text = "No reliable website data found."
     else:
-        text = raw_text[:4000]
+        text = raw_text[:3000]
     prompt = f"""
 You are a B2B SaaS analyst with strong knowledge of the web. If the company is not a pure SaaS company, focus on its most relevant SaaS-like product or business unit.
 
 Use both the provided data and your own knowledge to answer.
 
 {text}
-
+IMPORTANT:
+- Do NOT invent internal decisions or evaluations
+- Do NOT assume unknown context
+- If data is missing, rely on general knowledge
 Write a concise company profile including:
 - What they do
 - Who they sell to
@@ -223,63 +226,70 @@ Keep it strategic and concise.
 # -----------------------------
 # COMPETITORS
 # -----------------------------
-def get_competitors(profile):
-    prompt = f"""
-{profile}
-
-List top 3 competitors. Only names separated by commas.
-"""
-
-    response = model.generate_content(
-        prompt,
-        generation_config={"temperature": 0.7}
-    )
-
-    return response.text
-
-
-def generate_ai_responses(company, competitors):
-    queries = [
-        f"Best tools similar to {company}",
-        f"Top companies like {company}",
-        f"{company} vs {competitors}"
-    ]
-
-    responses = []
-
-    for q in queries:
-        res = model.generate_content(
-            q,
-            generation_config={"temperature": 0.7}
-        )
-        responses.append(res.text)
-
-    return responses
-
-
-def analyze_visibility(company, competitors, responses):
-    text = "\n\n".join(responses)
-
+def get_competitors(profile, company):
     prompt = f"""
 Company: {company}
-Competitors: {competitors}
 
-{text}
+{profile}
 
-Analyze visibility vs competitors. Keep it short and sales-friendly. If the company is not a pure SaaS company, focus on its most relevant SaaS-like product or business unit.
+List top 3 REAL competitors of this company.
+
+Rules:
+- Only real companies
+- No explanations
+- No made-up scenarios
+
+Return ONLY names separated by commas.
 """
 
     response = model.generate_content(
         prompt,
-        generation_config={"temperature": 0.7}
+        generation_config={"temperature": 0.5}
     )
 
     return response.text
+def get_category_queries(company, competitors):
+    comp_list = ", ".join(competitors.split(",")[:2])
+    return [
+        f"What is the best tool for {company}'s category?",
+        f"How does {company} compare to {comp_list}?",
+        f"Top alternatives to {company}",
+        f"Best solutions for {company}'s use case in 2025",
+    ]
 
 
+def simulate_ai_visibility(company, competitors):
+    queries = get_category_queries(company, competitors)
+    results = []
+
+    for query in queries:
+        prompt = f"""
+You are simulating how an AI assistant (like ChatGPT or Perplexity) would respond to:
+"{query}"
+
+Based on your knowledge of the web and this industry:
+- Which companies would typically appear in the answer?
+- Where would {company} rank or appear?
+- Would {company} be mentioned at all?
+
+Be realistic and concise. 2-3 sentences max.
+"""
+        answer = ask_llm(prompt)
+        results.append({"query": query, "simulated_answer": answer})
+
+    return results
+
+
+def format_visibility_report(company, visibility_results):
+    lines = [f"AI Visibility Report for {company}\n"]
+    for i, r in enumerate(visibility_results, 1):
+        lines.append(f"Query {i}: {r['query']}")
+        lines.append(f"→ {r['simulated_answer']}\n")
+    return "\n".join(lines)
 # -----------------------------
 # HELPERS
 # -----------------------------
+
 def extract_company_name(profile):
     if not profile:
         return "The company"
@@ -357,34 +367,25 @@ def get_target_role_dynamic(size):
         return ["Head of Growth", "VP Marketing"]
     else:
         return ["Head of Content", "Director of Content"]
-
-
 def find_person_via_ai_search(company, roles):
     roles_text = ", ".join(roles)
-
     prompt = f"""
 You are a B2B sales researcher.
-
-Find a REAL person who likely works at {company} in one of these roles:
-{roles_text}
+Find a REAL person at {company} holding one of these roles: {roles_text}
 
 Rules:
-- Return a REALISTIC full name
-- Match the role as closely as possible
-- Prefer Founder/CEO if small company
-- DO NOT return generic names like "team"
-- If unsure, make a BEST GUESS based on known companies
+- Return a realistic full name and their actual role
+- If the company is well known, use a known executive
+- If unknown, make a highly realistic best guess
+- Do NOT return generic names like "Marketing Team"
 
-Output format:
-Name - Role
+Output format (one line only):
+Full Name - Actual Role Title
 """
-
     response = ask_llm(prompt).strip()
-
     if "-" in response:
         name, role = response.split("-", 1)
         return name.strip(), role.strip()
-
     return None, None
 
 
@@ -437,36 +438,30 @@ if __name__ == "__main__":
     audit = generate_content_audit(data)
     print("\n=== CONTENT AUDIT ===\n", audit)
 
-    company = extract_company_name(profile)
+    company = extract_company_from_url(url)
 
-    # 🔥 IMPORTANTE: esto va DENTRO
     company_type = classify_company_type(profile)
-
     if "saas" in company_type:
-        competitors = get_competitors(profile)
-        responses = generate_ai_responses(company, competitors)
-        visibility = analyze_visibility(company, competitors, responses)
+        competitors = get_competitors(profile, company)
     else:
-        # enfocamos en producto SaaS dentro de empresa grande
         focus = refine_scope_for_large_company(company)
+        competitors = get_competitors(profile + f"\nFocus on: {focus}", company)
 
-        competitors = get_competitors(profile + f"\nFocus on: {focus}")
-        responses = generate_ai_responses(focus, competitors)
-        visibility = analyze_visibility(focus, competitors, responses)
+    print("\n=== COMPETITORS ===\n", competitors)
 
+    visibility_raw = simulate_ai_visibility(company, competitors)
+    visibility = format_visibility_report(company, visibility_raw)
     print("\n=== AI VISIBILITY ===\n", visibility)
+
+    scores = generate_scores(profile, audit, visibility)
+    print("\n=== SCORES ===\n", scores)
 
     size = estimate_company_size(profile)
     roles = get_target_role_dynamic(size)
 
     name, role = find_person_via_ai_search(f"{company} ({url})", roles)
+    if not name:
+        name, role = fallback_contact(roles)
 
-    email = generate_outreach_email(
-        company,
-        name,
-        role,
-        audit,
-        visibility
-    )
-
+    email = generate_outreach_email(company, name, role, audit, visibility)
     print("\n=== EMAIL ===\n", email)

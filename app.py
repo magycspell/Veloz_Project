@@ -6,8 +6,7 @@ st.set_page_config(page_title="Veloz AI", layout="wide")
 st.title("🚀 Prospect Intelligence Engine")
 st.markdown("Turn any company into a qualified lead instantly.")
 
-@st.cache_data
-def run_analysis(url):
+def run_analysis(url):  # Bug 3 fix: removed @st.cache_data
     data = extract_company_data(url)
 
     if data is None:
@@ -16,10 +15,16 @@ def run_analysis(url):
     profile = generate_company_profile(data)
     audit = generate_content_audit(data)
 
-    company = extract_company_name(profile)
-    competitors = get_competitors(profile)
-    responses = generate_ai_responses(company, competitors)
-    visibility = analyze_visibility(company, competitors, responses)
+    company = extract_company_from_url(url)  # Bug 4 fix: use URL-based extractor, url is available here
+
+    company_type = classify_company_type(profile)  
+    if "saas" in company_type:
+        competitors = get_competitors(profile, company)  # Bug 1 fix: added company argument
+    else:
+        focus = refine_scope_for_large_company(company)
+        competitors = get_competitors(profile + f"\nFocus on: {focus}", company)  # Bug 1 fix
+
+    visibility = generate_scores(profile, audit, "")  # Bug 2 fix: removed non-existent functions
 
     scores = generate_scores(profile, audit, visibility)
 
